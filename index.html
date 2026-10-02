@@ -298,6 +298,30 @@
     margin-top:.5rem;
     opacity:.75;
   }
+
+  body{background:radial-gradient(ellipse at 50% -15%,rgba(116,91,48,.16),transparent 45%),linear-gradient(180deg,#17140f 0%,#0b0a08 38%,#080807 100%);color:var(--cream)}
+  body::before{opacity:.045;background-image:radial-gradient(rgba(229,215,184,.55) .5px,transparent .7px);background-size:4px 4px}
+  *,*::before,*::after{text-shadow:none!important;box-shadow:none!important}
+  .card,.panel,.stat,.modal,.toast,.toolbar,.section,.feature,.item,.table-wrap{background:linear-gradient(145deg,rgba(31,27,21,.97),rgba(14,13,11,.98))!important;border-color:var(--line)!important;border-radius:2px!important}
+  button,.btn,.tab,.chip,.badge{border-radius:1px!important}
+  button:hover,.btn:hover,.tab:hover{background:rgba(196,147,77,.13)!important;color:var(--amber-hi)!important}
+  .active,.selected,.primary,.accent{background:var(--amber-deep)!important;color:var(--cream)!important;border-color:var(--amber)!important}
+  .glow,.highlight,.highlighted,.active::after,.selected::after{box-shadow:none!important;filter:none!important}
+  a{color:var(--amber)!important}
+  h1,h2,h3,h4{letter-spacing:.08em;text-transform:uppercase}
+  .site-footer{margin-top:3rem;padding:2rem 1.5rem 3rem;text-align:center;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem;line-height:1.5}
+  .site-footer a{color:var(--amber);text-decoration:none;font-weight:600}
+  .site-footer a:hover{color:var(--amber-hi);text-decoration:underline}
+  .site-footer small{display:block;margin-top:.5rem;opacity:.75}
+
+
+  .projection-panel{margin-top:18px;padding:18px;border:1px solid var(--line);background:linear-gradient(145deg,rgba(31,27,21,.97),rgba(14,13,11,.98));border-radius:2px}
+  .projection-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
+  .proj-stat{padding:12px;border:1px solid var(--line);background:rgba(0,0,0,.18);border-radius:2px}
+  .proj-stat .micro-label{display:block;margin-bottom:8px}
+  .proj-value{font-family:var(--mono);font-size:18px;color:var(--cream);font-weight:600}
+  .proj-sub{font-size:11px;color:var(--muted);margin-top:6px}
+
 </style>
 </head>
 <body>
@@ -381,6 +405,14 @@
       <div class="breakeven">
         <span class="micro-label">TO BREAK EVEN</span>
         <div class="breakeven-value" id="breakEven">0</div>
+      </div>
+    </div>
+
+    <div class="projection-panel">
+      <span class="micro-label">GOAL PROJECTION</span>
+      <div class="projection-grid">
+        <div class="proj-stat"><span class="micro-label">Matches needed</span><div class="proj-value" id="projMatches">—</div><div class="proj-sub" id="projMatchesSub">based on session avg</div></div>
+        <div class="proj-stat"><span class="micro-label">Est. completion</span><div class="proj-value" id="projDate">—</div><div class="proj-sub" id="projDateSub">at current pace</div></div>
       </div>
     </div>
 
@@ -504,17 +536,13 @@
   }
 
   function formatCombatBalance(kills, deaths) {
-    var value = (Number(kills) || 0) - (Number(deaths) || 0);
+    const balance = kills - deaths;
 
-    if (value > 0) {
-      return '+' + value.toFixed(4);
+    if (balance > 0) {
+      return '+' + balance.toLocaleString();
     }
 
-    if (value < 0) {
-      return '−' + Math.abs(value).toFixed(4);
-    }
-
-    return '0.0000';
+    return balance.toLocaleString();
   }
 
   /* ================= state ================= */
@@ -699,6 +727,32 @@
   }
 
   /* ================= rendering ================= */
+  
+  function calculateGoalProjection(){
+    var prog=calculateTargetProgress(), totals=calculateTotalStats();
+    if(prog.reached)return {matchesNeeded:0,estimatedDate:null,reached:true};
+    var all=[]; state.sessions.forEach(function(x){(x.matches||[]).forEach(function(m){all.push(m)})});
+    if(!all.length)return {matchesNeeded:null,estimatedDate:null,reached:false};
+    var ak=all.reduce(function(a,m){return a+(m.kills||0)},0)/all.length;
+    var ad=all.reduce(function(a,m){return a+(m.deaths||0)},0)/all.length;
+    if(ad===0)ad=.5;
+    var target=parseFloat(state.target); if(!Number.isFinite(target)||target<=0)target=1;
+    var n=target*totals.deaths-totals.kills, d=ak-target*ad, needed=null;
+    if(d>0&&n>0)needed=Math.ceil(n/d); else if(d<=0)needed=Infinity; else needed=0;
+    var mpd=0, active=activeSession();
+    if(active&&(active.matches||[]).length){var h=((active.ended||Date.now())-active.started)/36e5;if(h>0)mpd=active.matches.length/h*24}
+    if(!mpd)state.sessions.forEach(function(x){if(x.ended&&(x.matches||[]).length){var h=(x.ended-x.started)/36e5;if(h>0)mpd+=x.matches.length/h*24}});
+    var date=null;if(Number.isFinite(needed)&&needed>0&&mpd>0)date=new Date(Date.now()+needed/mpd*864e5);
+    return {matchesNeeded:needed,estimatedDate:date,matchesPerDay:mpd,reached:false};
+  }
+  function renderProjection(){
+    var p=calculateGoalProjection(),m=document.getElementById('projMatches'),ms=document.getElementById('projMatchesSub'),d=document.getElementById('projDate'),ds=document.getElementById('projDateSub');
+    if(p.reached){m.textContent='Goal reached!';ms.textContent='—';d.textContent='—';ds.textContent='—';return}
+    if(p.matchesNeeded===null||p.matchesNeeded===Infinity){m.textContent=p.matchesNeeded===Infinity?'∞':'—';ms.textContent=p.matchesNeeded===Infinity?'avg performance too low':'based on session avg';d.textContent='—';ds.textContent='start playing to estimate';return}
+    m.textContent=p.matchesNeeded.toLocaleString()+' matches';
+    if(p.estimatedDate){d.textContent=p.estimatedDate.toLocaleDateString('en-US',{month:'short',day:'numeric'});ds.textContent='at '+p.matchesPerDay.toFixed(1)+' matches/day'}else{d.textContent='—';ds.textContent='start playing to estimate'}
+  }
+
   function renderStats() {
     var totals = calculateTotalStats();
     var prog = calculateTargetProgress();
@@ -825,6 +879,7 @@
 
   function renderAll() {
     renderStats();
+    renderProjection();
     renderSession();
     renderMatches();
   }
@@ -1048,6 +1103,5 @@
     <a href="https://github.com/WildXAH" target="_blank" rel="noopener">WildXAH</a> · Unofficial non-commercial fan project<br>
     <small>Hunt: Showdown and related assets are trademarks and property of Crytek GmbH. This project is not affiliated with or endorsed by Crytek.</small>
   </footer>
-
 </body>
 </html>
